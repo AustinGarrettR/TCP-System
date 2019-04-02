@@ -1,9 +1,14 @@
-﻿using UnityEngine;
+﻿/*
+ * This is an example, so understand it is missing the calls to
+ * init, update, and shutdown of connection handler
+ */
 
-public class ExampleManager
+using UnityEngine;
+
+public class Example
 {
     //Constructor
-    public ExampleManager(ConnectionHandler connectionHandler)
+    public Example(ConnectionHandler connectionHandler)
     {
         //Add our function to the event
         connectionHandler.NotifyPacketReceived += receivePacket;
@@ -24,5 +29,5 @@ public class ExampleManager
     {
         Debug.Log("Action completed. Index:" + index + " Sentence:" + sentence + " floats length:" + floats.Length);
     }
-
+	
 }
