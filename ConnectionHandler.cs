@@ -6,14 +6,8 @@ using System.Threading;
 using UnityEngine;
 using System.Runtime.InteropServices;
 
-public abstract class ConnectionHandler : Manager
+public class ConnectionHandler : Manager
 {
-
-    /*
-     * Abstract Variables
-     */
-
-    public abstract Dictionary<string, System.Object> packets { get; set; }
 
     /*
      * Override Functions
