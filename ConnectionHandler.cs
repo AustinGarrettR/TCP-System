@@ -62,14 +62,14 @@ public abstract class ConnectionHandler : Manager
     private Thread tcpListenerThread;
 
     //Event Delegates
-    private delegate void NotifyClientDisconnectedDelegate(TcpClient client);
-    private delegate void NotifyClientConnectedDelegate(TcpClient client);
-    private delegate void NotifyPacketReceivedDelegate(int packetId, Packet packet);
+    public delegate void NotifyClientDisconnectedDelegate(TcpClient client);
+    public delegate void NotifyClientConnectedDelegate(TcpClient client);
+    public delegate void NotifyPacketReceivedDelegate(int packetId, Packet packet);
 
     //Events
-    private event NotifyClientDisconnectedDelegate NotifyClientDisconnected;
-    private event NotifyClientConnectedDelegate NotifyClientConnected;
-    private event NotifyPacketReceivedDelegate NotifyPacketReceived;
+    public event NotifyClientDisconnectedDelegate NotifyClientDisconnected;
+    public event NotifyClientConnectedDelegate NotifyClientConnected;
+    public event NotifyPacketReceivedDelegate NotifyPacketReceived;
 
     //Locks
     private System.Object lockObject = new object();
@@ -266,7 +266,7 @@ public abstract class ConnectionHandler : Manager
     }
 
     //Triggers event for packet receiving
-    public void OnPacketReceived(byte[] bytes)
+    private void OnPacketReceived(byte[] bytes)
     {
 
         int packetId = PacketReader.ReadIntAsync(ref bytes);
@@ -279,7 +279,7 @@ public abstract class ConnectionHandler : Manager
     }
 
     //Triggers event for a client connecting
-    public void OnPlayerConnected(TcpClient client)
+    private void OnPlayerConnected(TcpClient client)
     {
         lock (lockObject)
         {
@@ -289,7 +289,7 @@ public abstract class ConnectionHandler : Manager
     }
 
     //Triggers event for a client disconnecting
-    public void OnPlayerDisconnected(TcpClient client)
+    private void OnPlayerDisconnected(TcpClient client)
     {
         lock (lockObject)
         {
