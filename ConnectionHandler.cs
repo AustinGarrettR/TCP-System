@@ -6,8 +6,14 @@ using System.Threading;
 using UnityEngine;
 using System.Runtime.InteropServices;
 
-public class ConnectionHandler : Manager
+public abstract class ConnectionHandler : Manager
 {
+
+    /*
+     * Abstract Variables
+     */
+
+    public abstract bool isServer { get; set; }
 
     /*
      * Override Functions
@@ -16,7 +22,7 @@ public class ConnectionHandler : Manager
     public override void init()
     {
         // Start TcpServer background thread 		
-        tcpListenerThread = new Thread(new ThreadStart(ListenForIncommingRequests));
+        tcpListenerThread = new Thread(isServer ? new ThreadStart(serverListenLoop) : new ThreadStart(clientListenLoop));
         tcpListenerThread.IsBackground = true;
         tcpListenerThread.Start();
     }
@@ -59,11 +65,17 @@ public class ConnectionHandler : Manager
     public delegate void NotifyClientDisconnectedDelegate(TcpClient client);
     public delegate void NotifyClientConnectedDelegate(TcpClient client);
     public delegate void NotifyPacketReceivedDelegate(int packetId, Packet packet);
+    public delegate void NotifyFailedConnectDelegate();
+    public delegate void NotifyOnDisconnectedFromServerDelegate();
+    public delegate void NotifyOnConnectedToServerDelegate();
 
     //Events
     public event NotifyClientDisconnectedDelegate NotifyClientDisconnected;
     public event NotifyClientConnectedDelegate NotifyClientConnected;
     public event NotifyPacketReceivedDelegate NotifyPacketReceived;
+    public event NotifyFailedConnectDelegate NotifyFailedConnect;
+    public event NotifyOnDisconnectedFromServerDelegate NotifyOnDisconnectedFromServer;
+    public event NotifyOnConnectedToServerDelegate NotifyOnConnectedToServer;
 
     //Locks
     private System.Object lockObject = new object();
@@ -80,6 +92,9 @@ public class ConnectionHandler : Manager
 
     //Queued Packet buffer
     private List<byte> queuedMsg = new List<byte>();
+
+    //Client connected boolean
+    private bool connected;
 
 
     /*
@@ -145,8 +160,8 @@ public class ConnectionHandler : Manager
         }
     }
 
-    //Repeat Async TCP Listen function
-    private void ListenForIncommingRequests()
+    //Repeat Async TCP Listen function for Server
+    private void serverListenLoop()
     {
         try
         {
@@ -154,6 +169,46 @@ public class ConnectionHandler : Manager
             tcpListener = new TcpListener(IPAddress.Any, port);
             tcpListener.Start();
             Debug.Log("TCP Listening on port "+port);
+            Byte[] bytes = new Byte[maxBufferSize];
+            while (true)
+            {
+                RunLoopStep();
+                System.Threading.Thread.Sleep(10);
+            }
+        }
+        catch (SocketException socketException)
+        {
+            Debug.Log("SocketException " + socketException.ToString());
+        }
+    }
+
+    //Repeat Async TCP Listen function for Client
+    private void clientListenLoop()
+    {
+        try
+        {
+            // Create listener on localhost port
+
+            try
+            {
+
+                TcpClient server = new TcpClient();
+                connectedClients.Add(server);
+                server.NoDelay = true;
+                server.Connect(IPAddress.Loopback, port);
+                Debug.Log("Connecting to server on port " + port);
+
+            }
+            catch (SocketException e)
+            {
+                OnFailedConnect();
+                Debug.LogError(e);
+                System.Threading.Thread.CurrentThread.Abort();
+            } catch (Exception e)
+            {
+                Debug.LogError(e);
+            }
+           
             Byte[] bytes = new Byte[maxBufferSize];
             while (true)
             {
@@ -178,10 +233,31 @@ public class ConnectionHandler : Manager
             return true;
     }
 
+    //Client disconnect
+    public void Disconnect()
+    {
+        if(isServer)
+        {
+            throw new Exception("Server is attempting to disconnect as a client.");
+        }
+
+        TcpClient tcpClient = connectedClients[0];
+        if (tcpClient == null) return;
+
+        tcpClient.Close();
+        tcpClient = null;
+        if (connected == true)
+        {
+            connected = false;
+            OnDisconnectedFromServer();
+        }
+    }
+
     //Repeat method for TCP Listener
     private void RunLoopStep()
     {
-        if (disconnectedClients.Count > 0)
+        //Is server, check for disconnecting clients
+        if (isServer && disconnectedClients.Count > 0)
         {
             TcpClient[] _disconnectedClients = disconnectedClients.ToArray();
             this.disconnectedClients.Clear();
@@ -195,11 +271,36 @@ public class ConnectionHandler : Manager
             }
         }
 
-        if (tcpListener.Pending())
+        //Is server and is receiving a pending connection
+        if (isServer && tcpListener.Pending())
         {
             TcpClient newClient = tcpListener.AcceptTcpClient();
             newClient.NoDelay = true;
             OnPlayerConnected(newClient);
+        }
+
+        //Client code
+        if (isServer == false)
+        {
+            TcpClient tcpClient = connectedClients[0];
+            if (tcpClient == null || IsSocketConnected(tcpClient.Client) == false)
+            {
+                if (connected == true)
+                {
+                    Debug.Log("Lost connection to the server.");
+                    connected = false;
+                    OnDisconnectedFromServer();
+                }
+                return;
+            }
+            else if (tcpClient.Connected)
+            {
+                if (connected == false)
+                {
+                    connected = true;
+                    OnConnectedToServer();
+                }
+            }
         }
 
         foreach (var c in connectedClients)
@@ -289,5 +390,32 @@ public class ConnectionHandler : Manager
         {
             qeuedFunctions.Add(() => NotifyClientDisconnected(client));
         }
-    }    
+    }
+
+    //Triggers event for a client failing to connect
+    private void OnFailedConnect()
+    {
+        lock (lockObject)
+        {
+            qeuedFunctions.Add(() => NotifyFailedConnect());
+        }
+    }
+
+    //Triggers event when disconnected from server
+    private void OnDisconnectedFromServer()
+    {
+        lock (lockObject)
+        {
+            qeuedFunctions.Add(() => NotifyOnDisconnectedFromServer());
+        }
+    }
+
+    //Triggers event when connected to server
+    private void OnConnectedToServer()
+    {
+        lock (lockObject)
+        {
+            qeuedFunctions.Add(() => NotifyOnConnectedToServer());
+        }
+    }
 }
