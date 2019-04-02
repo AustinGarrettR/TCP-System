@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public struct ToServerPacket_1 : Packet
+public struct ExamplePacket_1 : Packet
 {
     //Packet ID
     public int packetId { get => 1; }
@@ -13,7 +13,7 @@ public struct ToServerPacket_1 : Packet
     public float[] floats;
 
     //Constructor
-    public ToServerPacket_1(int index, string sentence, float[] floats)
+    public ExamplePacket_1 (int index, string sentence, float[] floats)
     {
         this.index = index;
         this.sentence = sentence;
