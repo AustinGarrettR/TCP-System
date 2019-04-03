@@ -1,24 +1,28 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using System;
 
-public struct ExamplePacket_1 : Packet
+[Serializable]
+[Packet(1, "Example packet used for testing.")]
+public class ExamplePacket_1 : Packet
 {
-    //Packet ID
-    public int packetId { get => 1; }
+    //Packet Id
+    int Packet.packetId => 1;
 
     //Data
     public int index;
-    public string sentence;
-    public float[] floats;
+    public int index2;
 
-    //Constructor
-    public ExamplePacket_1 (int index, string sentence, float[] floats)
+    public byte[] getBytes()
     {
-        this.index = index;
-        this.sentence = sentence;
-        this.floats = floats;
+        byte[] bytes = null;
+        PacketWriter.Add(ref bytes, index); //1-int
+        PacketWriter.Add(ref bytes, index2); //2-int
+        return bytes;
     }
 
-    
+    public void readPacket(byte[] bytes)
+    {
+        index = PacketReader.ReadInt(ref bytes); //1-int
+        index2 = PacketReader.ReadInt(ref bytes); //2-int
+    }
+
 }

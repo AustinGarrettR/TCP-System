@@ -6,20 +6,25 @@ using System.Threading;
 using UnityEngine;
 using System.Runtime.InteropServices;
 
-public abstract class ConnectionHandler : Manager
+public class ConnectionManager : Manager
 {
 
     /*
-     * Abstract Variables
+     * Constructor
      */
 
-    public abstract bool isServer { get; set; }
+    //Assign if instance is running as server or client
+    public ConnectionManager(bool isServer)
+    {
+        this._isServer = isServer;
+    }
 
     /*
      * Override Functions
      */
 
-    public override void init()
+    //Called on start
+    public override void init(params System.Object[] parameters)
     {
         // Start TcpServer background thread 		
         tcpListenerThread = new Thread(isServer ? new ThreadStart(serverListenLoop) : new ThreadStart(clientListenLoop));
@@ -27,29 +32,49 @@ public abstract class ConnectionHandler : Manager
         tcpListenerThread.Start();
     }
 
+    //Called every frame on main thread
     public override void update()
     {
 
+        //Lock to ensure thread safety
         lock (lockObject)
         {
+            //Iterate queue'd up event functions on main thread, originating from async thread
             foreach (Action action in qeuedFunctions)
             {
-
-                action.Invoke();
+                if(action != null)
+                    action.Invoke();
             }
             qeuedFunctions.Clear();
         }
 
     }
 
+    //Called on program shutdown
     public override void shutdown()
     {
-        throw new NotImplementedException();
+
+        tcpListenerThread.Abort();
+
+        //Disconnect each client
+        foreach(TcpClient c in connectedClients)
+        {
+            if(c != null)
+                c.Close();            
+        }
+
+        //Close listener
+        if(tcpListener != null)
+            tcpListener.Stop();
     }
 
     /*
      * Internal Variables
      */
+
+    //Is instance running as server or client
+    private bool _isServer;
+    public virtual bool isServer { get => _isServer; }
 
     //Configuration
     private byte delimiter = SharedConfig.DELIMITER;
@@ -64,7 +89,7 @@ public abstract class ConnectionHandler : Manager
     //Event Delegates
     public delegate void NotifyClientDisconnectedDelegate(TcpClient client);
     public delegate void NotifyClientConnectedDelegate(TcpClient client);
-    public delegate void NotifyPacketReceivedDelegate(int packetId, Packet packet);
+    public delegate void NotifyPacketReceivedDelegate(int packetId, byte[] rawPacket);
     public delegate void NotifyFailedConnectDelegate();
     public delegate void NotifyOnDisconnectedFromServerDelegate();
     public delegate void NotifyOnConnectedToServerDelegate();
@@ -129,11 +154,13 @@ public abstract class ConnectionHandler : Manager
         //Serialize packet struct data to byte array
         try
         {
-            packetBytes = MarshalConverter.getBytes(packet);
-        } catch
+            packetBytes = packet.getBytes();
+        } catch (Exception e)
         {
-            throw new Exception("Unable to serialize packet struct data to byte array for packet: "+packet.packetId);
+            throw e;
         }
+
+        Debug.Log("Packet bytes size:" + packetBytes.Length);
 
         //Send packetID over network
         sendEscapedBytes(c, ByteConverter.getBytes(packet.packetId));       
@@ -189,11 +216,11 @@ public abstract class ConnectionHandler : Manager
         {
             // Create listener on localhost port
 
+            TcpClient server;
             try
             {
 
-                TcpClient server = new TcpClient();
-                connectedClients.Add(server);
+                server = new TcpClient();
                 server.NoDelay = true;
                 server.Connect(IPAddress.Loopback, port);
                 Debug.Log("Connecting to server on port " + port);
@@ -204,11 +231,16 @@ public abstract class ConnectionHandler : Manager
                 OnFailedConnect();
                 Debug.LogError(e);
                 System.Threading.Thread.CurrentThread.Abort();
+
+                return;
             } catch (Exception e)
             {
                 Debug.LogError(e);
+                return;
             }
-           
+
+            connectedClients.Add(server);
+
             Byte[] bytes = new Byte[maxBufferSize];
             while (true)
             {
@@ -276,14 +308,17 @@ public abstract class ConnectionHandler : Manager
         {
             TcpClient newClient = tcpListener.AcceptTcpClient();
             newClient.NoDelay = true;
+
+            connectedClients.Add(newClient);
+            escapedClients.Add(newClient, false);
+
             OnPlayerConnected(newClient);
         }
 
         //Client code
         if (isServer == false)
         {
-            TcpClient tcpClient = connectedClients[0];
-            if (tcpClient == null || IsSocketConnected(tcpClient.Client) == false)
+            if (connectedClients[0] == null || IsSocketConnected(connectedClients[0].Client) == false)
             {
                 if (connected == true)
                 {
@@ -293,7 +328,7 @@ public abstract class ConnectionHandler : Manager
                 }
                 return;
             }
-            else if (tcpClient.Connected)
+            else if (connectedClients[0].Connected)
             {
                 if (connected == false)
                 {
@@ -306,7 +341,7 @@ public abstract class ConnectionHandler : Manager
         foreach (var c in connectedClients)
         {
 
-            if (IsSocketConnected(c.Client) == false)
+            if (isServer && IsSocketConnected(c.Client) == false)
             {
                 disconnectedClients.Add(c);
                 continue;
@@ -364,58 +399,62 @@ public abstract class ConnectionHandler : Manager
     private void OnPacketReceived(byte[] bytes)
     {
 
-        int packetId = PacketReader.ReadIntAsync(ref bytes);
-        Packet packet = MarshalConverter.fromBytes<Packet>(bytes);
+        int packetId = PacketReader.ReadInt(ref bytes);
 
         lock (lockObject)
         {
-            qeuedFunctions.Add(() => NotifyPacketReceived(packetId, packet));
+            qeuedFunctions.Add(() => NotifyPacketReceived(packetId, bytes));
         }
     }
 
     //Triggers event for a client connecting
     private void OnPlayerConnected(TcpClient client)
     {
-        lock (lockObject)
-        {
-            qeuedFunctions.Add(() => NotifyClientConnected(client));
-        }
-        Debug.Log("Player Connected. IP:" + ((IPEndPoint) client.Client.RemoteEndPoint).Address.ToString());
+        if (NotifyClientConnected != null)
+            lock (lockObject)
+            {
+                qeuedFunctions.Add(() => NotifyClientConnected(client));
+            }
+        Debug.Log("Server: "+isServer+". Connected to IP:" + ((IPEndPoint) client.Client.RemoteEndPoint).Address.ToString());
     }
 
     //Triggers event for a client disconnecting
     private void OnPlayerDisconnected(TcpClient client)
     {
-        lock (lockObject)
-        {
-            qeuedFunctions.Add(() => NotifyClientDisconnected(client));
-        }
+        if(NotifyClientDisconnected != null)
+            lock (lockObject)
+            {
+                qeuedFunctions.Add(() => NotifyClientDisconnected(client));
+            }
     }
 
     //Triggers event for a client failing to connect
     private void OnFailedConnect()
     {
-        lock (lockObject)
-        {
-            qeuedFunctions.Add(() => NotifyFailedConnect());
-        }
+        if(NotifyFailedConnect != null)
+            lock (lockObject)
+            {
+                qeuedFunctions.Add(() => NotifyFailedConnect());
+            }
     }
 
     //Triggers event when disconnected from server
     private void OnDisconnectedFromServer()
     {
-        lock (lockObject)
-        {
-            qeuedFunctions.Add(() => NotifyOnDisconnectedFromServer());
-        }
+        if(NotifyOnDisconnectedFromServer != null)
+            lock (lockObject)
+            {
+                qeuedFunctions.Add(() => NotifyOnDisconnectedFromServer());
+            }
     }
 
     //Triggers event when connected to server
     private void OnConnectedToServer()
     {
-        lock (lockObject)
-        {
-            qeuedFunctions.Add(() => NotifyOnConnectedToServer());
-        }
+        if(NotifyOnConnectedToServer != null)
+            lock (lockObject)
+            {
+                qeuedFunctions.Add(() => NotifyOnConnectedToServer());
+            }
     }
 }

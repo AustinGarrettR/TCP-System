@@ -1,17 +1,71 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+
 public class PacketReader
 {
-	public static int ReadIntAsync(ref byte[] bytes)
+
+    public static int ReadInt(ref byte[] packetBytes)
     {
-        byte[] array = bytes;
-        Array.Copy(bytes, 0, array, 0, 4);
+        byte[] array = packetBytes;
+        Array.Copy(packetBytes, 0, array, 0, 4);
         int @int = ByteConverter.getInt(array);
         int num = 4;
-        int num2 = bytes.Length - num;
+        int num2 = packetBytes.Length - num;
         byte[] destinationArray = new byte[num2];
-        Array.Copy(bytes, num, destinationArray, 0, num2);
-        bytes = destinationArray;
+        Array.Copy(packetBytes, num, destinationArray, 0, num2);
+        packetBytes = destinationArray;
         return @int;
+    }
+
+    public static short ReadShort(ref byte[] packetBytes)
+    {
+        byte[] array = packetBytes;
+        Array.Copy(packetBytes, 0, array, 0, 2);
+        short @short = ByteConverter.getShort(array);
+        int num = 2;
+        int num2 = packetBytes.Length - num;
+        byte[] destinationArray = new byte[num2];
+        Array.Copy(packetBytes, num, destinationArray, 0, num2);
+        packetBytes = destinationArray;
+        return @short;
+    }
+
+    public static long ReadLong(ref byte[] packetBytes)
+    {
+        byte[] array = packetBytes;
+        Array.Copy(packetBytes, 0, array, 0, 8);
+        long @long = ByteConverter.getLong(array);
+        short num = 8;
+        int num2 = packetBytes.Length - num;
+        byte[] destinationArray = new byte[num2];
+        Array.Copy(packetBytes, num, destinationArray, 0, num2);
+        packetBytes = destinationArray;
+        return @long;
+    }
+
+    public static float ReadFloat(ref byte[] packetBytes)
+    {
+        byte[] array = packetBytes;
+        Array.Copy(packetBytes, 0, array, 0, 4);
+        float @float = ByteConverter.getFloat(array);
+        int num = 4;
+        int num2 = packetBytes.Length - num;
+        byte[] destinationArray = new byte[num2];
+        Array.Copy(packetBytes, num, destinationArray, 0, num2);
+        packetBytes = destinationArray;
+        return @float;
+    }
+    public static string ReadString(ref byte[] packetBytes)
+    {
+        int num = PacketReader.ReadInt(ref packetBytes);
+        List<byte> list = new List<byte>(packetBytes);
+        byte[] bytes = list.GetRange(0, num).ToArray();
+        string @string = ByteConverter.getString(bytes);
+        int num2 = num;
+        int num3 = packetBytes.Length - num2;
+        byte[] destinationArray = new byte[num3];
+        Array.Copy(packetBytes, num2, destinationArray, 0, num3);
+        packetBytes = destinationArray;
+        return @string;
     }
 }
